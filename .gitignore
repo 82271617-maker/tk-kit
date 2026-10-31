@@ -1,0 +1,6 @@
+kit/.venv/
+kit/out/
+__pycache__/
+*.mp4
+*.pyc
+.DS_Store

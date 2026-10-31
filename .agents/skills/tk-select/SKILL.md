@@ -1,0 +1,113 @@
+---
+name: tk-select
+description: 从 TikTok 对标账号里选题——按飞书账号表抓取每个号近 20 条、按账号各自算中位数基线、用六条门槛判定、按可做性排序，交付纯链接清单 + 已下载素材。当用户说「从这些对标账号里选能做的」「跑一下选题」「看看今天有什么可做」「按标准筛一下这些账号」时使用。
+---
+
+# TK 选题（对标账号 → 候选清单 → 可用链接）
+
+把「读账号表 → 抓取 → 算基线 → 判定 → 排序 → 交付」固化成一条可重复的流水线。
+**判定靠脚本，不靠感觉**：同一条片子，谁跑都是同一个结论。
+
+## 前置检查（每次先做）
+
+1. **代理可用**：TikTok 直连不通，必须走 `http://127.0.0.1:7890`（可用 `TK_PROXY` 覆盖）。
+   自检：`curl -x http://127.0.0.1:7890 -s -o /dev/null -w "%{http_code}" https://www.tiktok.com/` 应返回 200。
+2. **工具在位**：`<workspace>/projects/tk-sop/kit/.venv/bin/yt-dlp --version` 有输出。
+   缺了就跑一遍安装：
+   ```bash
+   cd projects/tk-sop/kit
+   python3 -m venv .venv && .venv/bin/pip install yt-dlp imageio-ffmpeg
+   ```
+3. **账号来源**：飞书工作表（`lark-cli sheets +csv-get --spreadsheet-token <token> --sheet-id <id> --as user`）。
+   只有用户贴的链接时，从 URL 里取 `@handle`，忽略 query 参数。
+
+## 流程
+
+```text
+① 读表取账号 ──► ② 每号抓近 20 条 ──► ③ 算各号中位数 ──► ④ 判定 ──► ⑤ 排序 ──► ⑥ 交付
+```
+
+### ② 抓取（有两个坑）
+
+- 主页 URL **带 query 参数**成功率更高：`https://www.tiktok.com/@<handle>?is_from_webapp=1&sender_device=pc`
+- 主页抓不到时：先用任意一条该号视频反查 `channel_id`，再用 `tiktokuser:<channel_id>` 拉列表。
+  脚本已内置：`kit/pool.py` 的 `list_videos()`（3 次重试 + channel_id 兜底）。
+- 仍然失败 → 写「未取到」，**不要猜、不要用别的号顶替**。
+
+### ④ 判定（顺序不能换）
+
+| 顺序 | 筛子 | 规则 |
+| --- | --- | --- |
+| a | 一票否决 | 血腥/政治/医疗绝对化；纯画面无叙事；烧录字幕压在画面中部且裁不掉也盖不住 |
+| b | 硬门槛 | 播放 ≥ 100,000；播放 ≥ 该号中位数 × 5（小号跳过）；45–90 秒；点赞率 ≥ 1.0% |
+| c | 软分（只排序） | 时效（≤14 天 5 分 / 15–30 天 3 分 / >30 天 1 分）、评论率、结构清晰度 |
+
+- **小号定义**：中位数 < 5 万。小号只按绝对值判，不参与倍数（实测中位 3,145 的号出现过 56 倍，纯噪声）。
+- **倍数必须各号各算**，绝不跨账号比较。
+- 阈值只改 `kit/pick.py` 的 `THRESHOLDS`，**不要**在提示词或对话里临时改数。
+
+### ⑤ 排序
+
+按「软分 + 倍数」，不按播放。成本约 3 小时/条，选「做得出来」而不是「播放最高」。
+
+### ⑥ 交付（不能省）
+
+必须交出三样：
+
+1. **纯链接清单**：一行一条，去掉 query 参数，格式 `https://www.tiktok.com/@<handle>/video/<id>`
+2. **素材**：下载到 `kit/out/candidates/<id>.mp4`，**文件名用视频 id，不用标题**
+3. **汇总**：条数 + 素材目录 + 生成日期
+
+只给标题不给链接 = 没交付。
+
+## 命令
+
+```bash
+cd projects/tk-sop/kit
+
+# 1) 批量抓取 + 判定（每号 20 条）
+printf "@handle1\n@handle2\n" > out/accounts.txt
+.venv/bin/python pool.py --accounts out/accounts.txt --limit 20
+
+# 2) 交付链接 + 下载素材（把 pool 结果里通过的链接贴进 out/selected.txt）
+.venv/bin/python deliver.py out/selected.txt
+```
+
+产物：`out/pool-<时间>.md`、`out/links-<日期>.txt`、`out/deliver-<日期>.md`、`out/candidates/`。
+
+## 输出格式
+
+```markdown
+| 账号 | 播放 | 倍数 | 时效 | 点赞率 | 时长 | 标题 | 链接 | 结论 | 淘汰原因 |
+
+各账号基线：@a 中位数 13.3 万 / @b 4.9 万
+淘汰原因分布：倍数不足 40 条 · 时效软分低 3 条
+已知限制：@c 主页抓取失败，未取到
+```
+
+每条入选再给一句**改写切入点**（这条片子换成日语后靠什么成立）。
+
+## 失败处理
+
+| 现象 | 处理 |
+| --- | --- |
+| `Unable to extract secondary user ID` | 换带 query 参数的主页 URL，或走 channel_id 兜底 |
+| 某号一条都抓不到 | 让用户贴该号任意一条视频链接；仍不行就在清单里标「未取到」 |
+| 播放数看起来忽高忽低 | TikTok 播放含推荐位波动，隔天可能差 10–20%，只看量级 |
+| 用户说「按我说的时间算」 | 时效是软分，不淘汰；不要为了让某条入选而临时改阈值 |
+
+## 边界（不要做）
+
+- 不判断「片子好不好笑」——这是人的事，脚本只给数据。
+- 不跨账号比倍数、不用英语区基线套日语区。
+- 不自动发布、不改用户的对标表（除非明确要求写回）。
+- 不因为某条「看着像爆款」就绕过门槛。
+
+配套文档：`projects/tk-sop/选题标准.md`（阈值推导）、`团队提示词-选题.md`（团队版提示词）。
+
+## 安装（团队）
+
+- **本仓库**：技能已在 `.agents/skills/tk-select/`，DSH 会在新会话里自动发现。
+- **其他机器**：clone 仓库后 `cp -R .agents/skills/tk-select ~/.dsh/skills/`。
+- ⚠️ 技能依赖同仓的 `projects/tk-sop/kit/`（脚本 + `.venv`），只拷技能目录会跑不起来。
+  脚本路径按「工作区根目录下的 `projects/tk-sop/kit`」解析。
