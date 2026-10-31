@@ -8,14 +8,25 @@ description: 从 TikTok 对标账号里选题——按飞书账号表抓取每�
 把「读账号表 → 抓取 → 算基线 → 判定 → 排序 → 交付」固化成一条可重复的流水线。
 **判定靠脚本，不靠感觉**：同一条片子，谁跑都是同一个结论。
 
+## 路径约定
+
+本技能假设 `kit/` 与 `.agents/` 在**同一个仓库根目录**下：
+
+| 安装方式 | `KIT` 指向 |
+| --- | --- |
+| 独立克隆（团队默认） | `~/tk-kit/kit` |
+| DSH 工作区内运行 | `<workspace>/projects/tk-sop/kit` |
+
+下文命令统一用 `KIT`，执行前先 `export KIT=<实际路径>`，或用环境变量 `TK_KIT` 覆盖。
+
 ## 前置检查（每次先做）
 
 1. **代理可用**：TikTok 直连不通，必须走 `http://127.0.0.1:7890`（可用 `TK_PROXY` 覆盖）。
    自检：`curl -x http://127.0.0.1:7890 -s -o /dev/null -w "%{http_code}" https://www.tiktok.com/` 应返回 200。
-2. **工具在位**：`<workspace>/projects/tk-sop/kit/.venv/bin/yt-dlp --version` 有输出。
+2. **工具在位**：`$KIT/.venv/bin/yt-dlp --version` 有输出。
    缺了就跑一遍安装：
    ```bash
-   cd projects/tk-sop/kit
+   cd "$KIT"
    python3 -m venv .venv && .venv/bin/pip install yt-dlp imageio-ffmpeg
    ```
 3. **账号来源**：飞书工作表（`lark-cli sheets +csv-get --spreadsheet-token <token> --sheet-id <id> --as user`）。
@@ -63,7 +74,7 @@ description: 从 TikTok 对标账号里选题——按飞书账号表抓取每�
 ## 命令
 
 ```bash
-cd projects/tk-sop/kit
+cd "$KIT"
 
 # 1) 批量抓取 + 判定（每号 20 条）
 printf "@handle1\n@handle2\n" > out/accounts.txt
@@ -107,7 +118,19 @@ printf "@handle1\n@handle2\n" > out/accounts.txt
 
 ## 安装（团队）
 
-- **本仓库**：技能已在 `.agents/skills/tk-select/`，DSH 会在新会话里自动发现。
-- **其他机器**：clone 仓库后 `cp -R .agents/skills/tk-select ~/.dsh/skills/`。
-- ⚠️ 技能依赖同仓的 `projects/tk-sop/kit/`（脚本 + `.venv`），只拷技能目录会跑不起来。
-  脚本路径按「工作区根目录下的 `projects/tk-sop/kit`」解析。
+一行装完（仓库公开）：
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/82271617-maker/tk-kit/main/install.sh | bash
+```
+
+或手动：
+
+```bash
+git clone https://github.com/82271617-maker/tk-kit.git ~/tk-kit
+bash ~/tk-kit/install.sh
+```
+
+安装脚本做三件事：装 venv 依赖（yt-dlp + ffmpeg）、把技能拷到 `~/.dsh/skills/`、打印自检结果。
+
+⚠️ 技能依赖同仓的 `kit/`，只拷技能目录会跑不起来。

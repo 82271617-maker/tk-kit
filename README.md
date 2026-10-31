@@ -17,11 +17,26 @@ prompts/       改写用的提示词库（简化 → 校对 → 中译日）
 
 ## 安装
 
+一行装完（仓库公开）：
+
 ```bash
-git clone <this-repo> ~/tk-kit
-cd ~/tk-kit/kit
-python3 -m venv .venv && .venv/bin/pip install yt-dlp imageio-ffmpeg
-cp -R ~/tk-kit/.agents/skills/tk-select ~/.dsh/skills/   # 可选：全局安装技能
+curl -fsSL https://raw.githubusercontent.com/82271617-maker/tk-kit/main/install.sh | bash
+```
+
+或手动：
+
+```bash
+git clone https://github.com/82271617-maker/tk-kit.git ~/tk-kit
+bash ~/tk-kit/install.sh
+```
+
+脚本做三件事：建 `.venv` 装 yt-dlp + ffmpeg、把技能拷到 `~/.dsh/skills/tk-select`、跑自检。
+可用 `SKILL_DEST=/path` 改技能安装位置。
+
+装完设置路径变量（SKILL.md 里所有命令都用 `$KIT`）：
+
+```bash
+export KIT=~/tk-kit/kit
 ```
 
 ## 前置
