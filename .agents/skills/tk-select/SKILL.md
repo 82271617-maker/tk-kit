@@ -17,7 +17,13 @@ description: 从 TikTok 对标账号里选题——按飞书账号表抓取每�
 | 独立克隆（团队默认） | `~/tk-kit/kit` |
 | DSH 工作区内运行 | `<workspace>/projects/tk-sop/kit` |
 
-下文命令统一用 `KIT`，执行前先 `export KIT=<实际路径>`，或用环境变量 `TK_KIT` 覆盖。
+下文命令统一用 `KIT`。**不需要你手动 export**：每条命令里都写了兜底
+
+```bash
+KIT="${KIT:-$HOME/tk-kit/kit}"
+```
+
+所以无论当前 shell 有没有这个变量、是不是旧会话，都能跑。要换位置才需要 `export KIT=...`。
 
 ## 前置检查（每次先做）
 
@@ -26,7 +32,8 @@ description: 从 TikTok 对标账号里选题——按飞书账号表抓取每�
 2. **工具在位**：`$KIT/.venv/bin/yt-dlp --version` 有输出。
    缺了就跑一遍安装：
    ```bash
-   cd "$KIT"
+   KIT="${KIT:-$HOME/tk-kit/kit}"   # 没设也能跑
+cd "$KIT"
    python3 -m venv .venv && .venv/bin/pip install yt-dlp imageio-ffmpeg
    ```
 3. **账号来源**：飞书工作表（`lark-cli sheets +csv-get --spreadsheet-token <token> --sheet-id <id> --as user`）。
@@ -76,6 +83,7 @@ description: 从 TikTok 对标账号里选题——按飞书账号表抓取每�
 ## 命令
 
 ```bash
+KIT="${KIT:-$HOME/tk-kit/kit}"   # 没设也能跑
 cd "$KIT"
 
 # 1) 批量抓取 + 判定（每号 20 条）

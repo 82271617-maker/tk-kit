@@ -22,6 +22,7 @@ TikTok 的**平台水印在下载时就没了**（yt-dlp 拿的是源文件）�
 ## 一、下载
 
 ```bash
+KIT="${KIT:-$HOME/tk-kit/kit}"   # 没设也能跑
 cd "$KIT"
 .venv/bin/python fetch.py out/links-2026-10-31.txt --out materials --frames 2
 ```

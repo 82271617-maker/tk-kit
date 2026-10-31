@@ -39,6 +39,11 @@ for d in "$SKILL_DEST"/*/; do
   esac
 done
 
+# macOS：给 GUI 启动的进程也设一份（对新进程生效，已运行的进程无法外部修改）
+if command -v launchctl >/dev/null 2>&1; then
+  launchctl setenv KIT "$KIT" 2>/dev/null && echo "    launchctl: KIT 已写入（对新启动的 App 生效）"
+fi
+
 echo
 echo "✅ 安装完成"
 echo "   下一步：export KIT=$KIT"
