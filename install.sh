@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# tk-kit 安装脚本：装依赖 + 装技能 + 自检
+# tk-kit 安装脚本：装依赖 + 装机仓库内所有技能 + 自检
 set -euo pipefail
 
 REPO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
-SKILL_SRC="$REPO_DIR/.agents/skills/tk-select"
+SKILLS_DIR="$REPO_DIR/.agents/skills"
 SKILL_DEST="${SKILL_DEST:-$HOME/.dsh/skills}"
 KIT="$REPO_DIR/kit"
 
 echo "==> 仓库目录: $REPO_DIR"
 
-if [ ! -d "$SKILL_SRC" ]; then
-  echo "!! 找不到技能目录: $SKILL_SRC" >&2
+if [ ! -d "$SKILLS_DIR" ]; then
+  echo "!! 找不到技能目录: $SKILLS_DIR" >&2
   exit 1
 fi
 
@@ -22,13 +22,22 @@ cd "$KIT"
 
 echo "==> 安装技能到 $SKILL_DEST"
 mkdir -p "$SKILL_DEST"
-rm -rf "$SKILL_DEST/tk-select"
-cp -R "$SKILL_SRC" "$SKILL_DEST/tk-select"
+for d in "$SKILLS_DIR"/*/; do
+  name="$(basename "$d")"
+  rm -rf "$SKILL_DEST/$name"
+  cp -R "$d" "$SKILL_DEST/$name"
+  echo "    + $name"
+done
 
 echo "==> 自检"
 "$KIT/.venv/bin/yt-dlp" --version | sed 's/^/    yt-dlp: /'
 "$KIT/.venv/bin/python" -c "import imageio_ffmpeg; print('    ffmpeg:', imageio_ffmpeg.get_ffmpeg_exe())"
-[ -f "$SKILL_DEST/tk-select/SKILL.md" ] && echo "    技能: $SKILL_DEST/tk-select/SKILL.md"
+for d in "$SKILL_DEST"/*/; do
+  name="$(basename "$d")"
+  case "$name" in
+    tk-*) [ -f "$d/SKILL.md" ] && echo "    技能: $d/SKILL.md" ;;
+  esac
+done
 
 echo
 echo "✅ 安装完成"
