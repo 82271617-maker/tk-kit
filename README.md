@@ -16,6 +16,28 @@ docs/          选题标准（含阈值推导）、团队提示词、AI 化评�
 prompts/       改写用的提示词库（简化 → 校对 → 中译日）
 ```
 
+## 改完技能必须重装（最容易踩的坑）
+
+`~/tk-kit/.agents/skills/` 是**源**，`~/.dsh/skills/` 和各个工作区的 `.agents/skills/` 是**副本**。
+改了技能文件但不重装，等于**只改了源头、AI 还在读旧副本**——表现是"明明改了却没生效"。
+
+改完任何 `SKILL.md` 或 `kit/*.py` 后，必须：
+
+```bash
+cd ~/tk-kit && git pull              # 拉最新
+bash install.sh                      # 把技能同步到 ~/.dsh/skills
+# 工作区级副本（如果你在某个工作区里也放了一份）
+cp .agents/skills/*/SKILL.md <workspace>/.agents/skills/*/SKILL.md
+```
+
+自检（三处应当一致）：
+
+```bash
+diff -q ~/tk-kit/.agents/skills/tk-select/SKILL.md ~/.dsh/skills/tk-select/SKILL.md
+```
+
+> `kit/*.py` 不用重装，技能里直接跑 `$KIT/*.py`；只有 `SKILL.md` 需要同步。
+
 ## 安装
 
 一行装完（仓库公开）：
