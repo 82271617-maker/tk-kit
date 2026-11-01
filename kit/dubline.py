@@ -39,12 +39,12 @@ def ff(*args):
 
 
 def duration(path):
+    """读时长。用正则，容忍 N/A 与 ffmpeg 输出格式差异（旧版按 ':' 切会崩）。"""
     r = subprocess.run([FF, "-hide_banner", "-i", str(path)], capture_output=True, text=True)
-    for line in r.stderr.splitlines():
-        if "Duration:" in line:
-            h, m, s = line.split("Duration:")[1].split(",")[0].strip().split(":")
-            return int(h) * 3600 + int(m) * 60 + float(s)
-    return 0.0
+    m = re.search(r"Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)", r.stderr)
+    if not m:
+        return 0.0
+    return int(m.group(1)) * 3600 + int(m.group(2)) * 60 + float(m.group(3))
 
 
 def silences(audio, d, thresh=THRESH):
@@ -144,6 +144,10 @@ def main():
         return
 
     segs = segments_from(starts, total)
+    # 丢掉碎段（<0.12s，多为尾部静音造成），否则最后一句时长可能为 0
+    segs = [x for x in segs if x[1] - x[0] > 0.12] or segs
+    if segs:
+        segs[-1] = (segs[-1][0], max(segs[-1][1], total))
     # 行数与段数不一致时按顺序对齐：多的段合并、少的段用中点切开
     if len(segs) > len(lines):
         segs = segs[:len(lines) - 1] + [(segs[len(lines) - 1][0], total)]
@@ -167,6 +171,10 @@ def main():
            "-ac", "1", "-ar", "44100", "-y", raw)
         trim(raw, cut)
         dur = duration(cut)
+        if dur < 0.05:                      # 被裁空了：退回未裁版本
+            ff("-v", "error", "-ss", f"{s:.3f}", "-to", f"{e:.3f}", "-i", audio,
+               "-ac", "1", "-ar", "44100", "-y", cut)
+            dur = duration(cut)
         parts.append(cut)
         srt.append(f"{i}\n{ts(t)} --> {ts(t + dur)}\n{line}\n")
         rows.append({"i": i, "start": round(t, 2), "end": round(t + dur, 2),

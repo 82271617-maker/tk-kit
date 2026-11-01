@@ -25,10 +25,10 @@ def env():
         sys.exit("缺 MINIMAX_API_KEY（在 ~/.tk-voice.env 里）")
     return key, ep
 
-def tts(text, voice_id, model, key, ep, retries=3):
+def tts(text, voice_id, model, key, ep, speed=1.0, retries=3):
     body = json.dumps({
         "model": model, "text": text, "stream": False,
-        "voice_setting": {"voice_id": voice_id, "speed": 1.0},
+        "voice_setting": {"voice_id": voice_id, "speed": speed},
         "audio_setting": {"format": "mp3", "sample_rate": 32000},
     }).encode()
     last = None
@@ -78,8 +78,11 @@ def main():
     p.add_argument("--out-dir", required=True)
     p.add_argument("--name", default=None)
     p.add_argument("--model", default="speech-2.5-hd-preview")
+    p.add_argument("--speed", type=float, default=1.0)
     p.add_argument("--gap", type=float, default=0.25, help="去气口版句间停顿")
     p.add_argument("--raw-gap", type=float, default=0.35, help="原配音版句间停顿")
+    p.add_argument("--mode", choices=["fast", "precise"], default="fast",
+                   help="fast=整段合成自然（默认）；precise=逐句合成字幕零误差")
     a = p.parse_args()
 
     key, ep = env()
@@ -89,10 +92,24 @@ def main():
     name = a.name or pathlib.Path(a.script).stem
     tmp = pathlib.Path(tempfile.mkdtemp())
 
+    if a.mode == "fast":
+        # 整段合成：把每行的空格换成「、」，行间用「。」，让模型自己控制呼吸
+        # 行内空格只是人工断句标记，直接去掉；行间用「。」让模型自己呼吸
+        punct = "。".join("".join(l.split()) for l in lines) + "。"
+        raw_mp3 = out/f"{name}-原配音.mp3"
+        raw_mp3.write_bytes(tts(punct, a.voice_id, a.model, key, ep, a.speed))
+        print(f"整段合成完成：{dur(raw_mp3):.2f}s / {len(punct)} 字符")
+        r = subprocess.run([sys.executable, str(pathlib.Path(__file__).parent/"dubline.py"),
+                            str(raw_mp3), a.script, "--gap", str(a.gap), "--out-dir", str(out)],
+                           capture_output=True, text=True)
+        print(r.stdout.strip() or r.stderr.strip()[:400])
+        print(f"\n原配音  {raw_mp3}  {dur(raw_mp3):.2f}s")
+        return
+
     segs, raws = [], []
     for i, text in enumerate(lines, 1):
         raw = tmp/f"{i:02d}-raw.mp3"
-        raw.write_bytes(tts(text, a.voice_id, a.model, key, ep))
+        raw.write_bytes(tts(text, a.voice_id, a.model, key, ep, a.speed))
         cut = tmp/f"{i:02d}-cut.wav"
         trim(raw, cut)
         raws.append(raw); segs.append(cut)
