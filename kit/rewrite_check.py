@@ -64,6 +64,16 @@ def main():
         print("✓ 00-评论.md 存在（钩子可溯源）")
     else:
         print("✗ 缺 00-评论.md —— 改写前必须扒评论，否则钩子是凭感觉编的"); ok = False
+    # 人审门禁：有 05 必须先生成 04
+    f4, f5 = d/"04-已审核.txt", d/"05-日文稿.txt"
+    if f5.exists() and not f4.exists():
+        print("✗ 有 05-日文稿.txt 但没有 04-已审核.txt —— 跳过了人审"); ok = False
+    elif f4.exists():
+        head = f4.read_text(encoding="utf-8").splitlines()[0] if f4.read_text(encoding="utf-8").strip() else ""
+        if "已人工审核" not in head:
+            print(f"✗ 04 首行缺审核留痕: {head[:40]}"); ok = False
+        else:
+            print("✓ 04 有审核留痕")
     print("结论:", "全部通过" if ok else "不合格")
     return 0 if ok else 1
 
