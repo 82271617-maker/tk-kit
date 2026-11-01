@@ -27,10 +27,33 @@ cd "$KIT"
 .venv/bin/python fetch.py out/links-2026-10-31.txt --out materials --frames 2
 ```
 
-产物：
+## 目录约定（素材统一放桌面，别再散落）
 
+```text
+~/Desktop/tk剪辑文件夹11.1/
+├── 01-素材/     原片 <id>.mp4 + meta/ + qc/ + manifest.csv   ← kit/materials 软链到这里
+├── 02-去水印/   -clean.mp4 / -blur.mp4 / -keepred.mp4 / -preview.png
+├── 03-文案/     <id>/01-…05-、00-评论.md                      ← kit/文案 软链到这里
+├── 04-配音/     配音 mp3、去气口 mp3、SRT
+└── 05-交付/     剪映导入清单、成片
 ```
-materials/
+
+命令里一律用显式路径：
+
+```bash
+ROOT="$HOME/Desktop/tk剪辑文件夹11.1"; KIT="${KIT:-$HOME/tk-kit/kit}"
+
+# 下载直接落 01-素材
+.venv/bin/python fetch.py out/links-<日期>.txt --out "$ROOT/01-素材" --frames 2
+
+# 去水印产物写 02-去水印（不写回原片目录）
+.venv/bin/python clean.py "$ROOT/01-素材/<id>.mp4" --rows "…" --mode blur \
+  --out "$ROOT/02-去水印/<id>-blur.mp4"
+```
+
+`kit/materials` 与 `kit/文案` 都是软链，指向上面两个目录——老命令不写 `--out` 也落在桌面。
+
+## 二、去水印（只遮文字行）
 ├── <id>.mp4           文件名用视频 id（跨平台安全、可反查）
 ├── meta/<id>.json     账号/标题/播放/时长/分辨率/有无音轨/链接
 ├── manifest.csv       汇总表
