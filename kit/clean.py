@@ -130,10 +130,19 @@ def to_bands(rows, total_h, min_run=1, gap=8, pad=8):
 def build_filter(bands, w, h, mode, fill):
     parts = []
     if mode == "blur":
-        for i, (y, hh) in enumerate(bands):
-            parts.append(f"crop={w}:{hh}:0:{y},boxblur=30:3[b{i}]")
-        chain = ";".join(parts)
-        last = "[0:v]"
+        # 先把源流 split 成 1 份底图 + N 份裁剪，否则 crop 没有输入标签、
+        # [0:v] 又被 overlay 消费掉，ffmpeg 会报 "Cannot find a matching stream"
+        n = len(bands)
+        labels = "".join(f"[s{i}]" for i in range(n + 1))
+        chain = f"[0:v]split={n + 1}{labels};"
+        # 半径按带宽自适应：ffmpeg 对窄带要求 radius <= 21，固定 30 会直接报
+        # "Invalid chroma_param radius value 30"，窄条（如只遮文字行 84px）必挂
+        def _blur(i, y, hh):
+            r = max(2, min(20, hh // 6))
+            return f"[s{i}]crop={w}:{hh}:0:{y},boxblur={r}:2[b{i}]"
+
+        chain += ";".join(_blur(i, y, hh) for i, (y, hh) in enumerate(bands))
+        last = f"[s{n}]"
         for i, (y, hh) in enumerate(bands):
             out = f"[v{i}]"
             chain += f";{last}[b{i}]overlay=0:{y}{out}"
