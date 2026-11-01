@@ -10,6 +10,7 @@ kit/
   pool.py      批量抓对标账号近 20 条 → 算账号基线 → 按门槛判定 → 出候选清单
   deliver.py   把选中的视频变成「纯链接清单 + 已下载 mp4」
   pick.py      阈值与判定逻辑（THRESHOLDS，改标准只改这里）
+  comments.py  抓评论 → 话题地形（争议强度 / 评论率 / 可当钩子的原句）
   tk.py        单节点命令：下载 / 体检 / 抽帧 / 裁边 / 模糊
 docs/          选题标准（含阈值推导）、团队提示词、AI 化评估
 prompts/       改写用的提示词库（简化 → 校对 → 中译日）
@@ -50,8 +51,12 @@ export KIT=~/tk-kit/kit
 cd kit
 printf "@handle1\n@handle2\n" > out/accounts.txt
 .venv/bin/python pool.py --accounts out/accounts.txt --limit 20      # 抓取 + 判定
+.venv/bin/python comments.py <视频链接> --pages 2 --top 10 --views <播放>   # 每条附评论附录
 .venv/bin/python deliver.py out/selected.txt                         # 交付链接 + 下载
 ```
+
+`comments.py` 输出的是**话题地形**，不是风险评级：争议强度（质疑真假的比例）、评论率、
+被反复提到的点、可当钩子的原句。它不淘汰任何片子，做不做由人决定。
 
 ## 判定标准（摘要）
 
@@ -59,7 +64,7 @@ printf "@handle1\n@handle2\n" > out/accounts.txt
 2. 硬门槛：播放 ≥ 10 万 **且** ≥ 该账号近 20 条中位数 ×5（小号跳过）**且** 45–90 秒 **且** 点赞率 ≥ 1.0%
 3. 软分排序：时效、评论率、结构清晰度
 
-详见 `docs/选题标准.md`。
+详见 `docs/选题标准.md`；评论怎么用见 `docs/评论地形.md`。
 
 ## 免责
 

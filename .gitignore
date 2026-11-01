@@ -4,3 +4,7 @@ __pycache__/
 *.mp4
 *.pyc
 .DS_Store
+kit/.venv-asr
+kit/.cache/
+kit/materials/
+kit/voices/
