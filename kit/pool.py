@@ -93,10 +93,19 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("--accounts", required=True)
     p.add_argument("--limit", type=int, default=20)
+    p.add_argument("--owner", default="default", help="剪辑师名，历史按人隔离（一人一份账号表+一份历史）")
+    p.add_argument("--open", action="store_true", help="跑完自动在浏览器打开通过的视频")
+    p.add_argument("--open-max", type=int, default=5, help="最多自动打开几条")
     a = p.parse_args()
 
     handles = [h for h in (handle_of(x) for x in Path(a.accounts).read_text().splitlines()) if h]
     rows, failed, bases = [], [], {}
+
+    hist_dir = OUT / "history"
+    hist_dir.mkdir(parents=True, exist_ok=True)
+    hist_path = hist_dir / f"{a.owner}.json"
+    history = json.loads(hist_path.read_text()) if hist_path.exists() else {}
+    skipped_dup = 0
 
     for h in handles:
         items = list_videos(h, a.limit)
@@ -111,6 +120,9 @@ def main():
         print(f"@{h}: {len(items)} 条，中位数 {bases[h]['median']:,}", flush=True)
 
         for vid, _ in items:
+            if vid in history:
+                skipped_dup += 1
+                continue
             url = f"https://www.tiktok.com/@{h}/video/{vid}"
             try:
                 meta = pick.ytdlp_json(url)
@@ -128,7 +140,8 @@ def main():
     now = dt.datetime.now()
     lines = [f"# 候选清单 · {now:%Y-%m-%d %H:%M}", "",
              f"账号：{', '.join('@' + h for h in handles)}　池子：{len(rows)} 条　"
-             f"通过：{sum(r['passed'] for r in rows)} 条", ""]
+             f"通过：{sum(r['passed'] for r in rows)} 条　"
+             f"历史去重跳过：{skipped_dup} 条（owner: {a.owner}）", ""]
     for h, b in bases.items():
         lines.append(f"- @{h} 基线：中位数 {b['median']:,}（{b['n']} 条，{b.get('source','')}）")
     lines.append("")
@@ -147,6 +160,24 @@ def main():
     out.write_text("\n".join(lines), encoding="utf-8")
     print("\n".join(lines))
     print("\nwrote", out)
+
+    # 记录本 owner 已推荐过的片，避免明天/后天重复推
+    now_iso = now.isoformat(timespec="seconds")
+    for r in rows:
+        if r["passed"]:
+            vid = r["url"].rstrip("/").split("/")[-1]
+            history[vid] = {"handle": r["handle"], "title": r["title"],
+                            "url": r["url"], "first_seen": now_iso}
+    hist_path.write_text(json.dumps(history, ensure_ascii=False, indent=1))
+    print(f"history: {len(history)} 条已记录 → {hist_path}")
+
+    # 自动打开（不用人再去复制链接）
+    if a.open:
+        import subprocess
+        picked = [r for r in rows if r["passed"]][: a.open_max]
+        for r in picked:
+            subprocess.run(["open", r["url"]], check=False)
+        print(f"opened: {len(picked)} 条")
 
 
 if __name__ == "__main__":

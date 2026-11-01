@@ -23,10 +23,19 @@ PROXY = "http://127.0.0.1:7890"
 API = "https://www.tikwm.com/api/comment/list/"
 
 # 争议信号：这些词出现 = 观众在吵，越吵越有题材
-DISPUTE = r"is this real|not real|real\?|fake|staged|scripted|skit|acting|impossible|can't believe|cant believe|no way|bs\b|cap\b|doubt|set ?up|propaganda|lie"
+DISPUTE = (r"is this real|not real|real\?|fake|staged|scripted|skit|acting|impossible|can't believe|cant believe|no way|bs\b|cap\b|doubt|set ?up|propaganda|lie"
+           r"|作り話|やらせ|演出|本当\?|嘘|フェイク|信じられない|ありえない|怪しい"
+           r"|假的|擺拍|摆拍|剧本|演的|不可能|不相信|真的吗|真的嗎|炒作"
+           r"|가짜|연출|설정|말도 안")
 # 情绪极性
-ANGER = r"fire him|fired|arrest|jail|sue|cruel|disgusting|horrible|shame on|should be|boycott|evil"
-WARM = r"angel|bless|god|pray|🙏|hero|beautiful|kind|touched|love|hope"
+ANGER = (r"fire him|fired|arrest|jail|sue|cruel|disgusting|horrible|shame on|should be|boycott|evil"
+         r"|許せない|ひどい|ありえない|逮捕|訴え|解雇|最低|腹立つ"
+         r"|太过分|过分|可恶|恶心|开除|报警|起诉|生气"
+         r"|화나|최악|경찰|고소")
+WARM = (r"angel|bless|god|pray|🙏|hero|beautiful|kind|touched|love|hope"
+        r"|神様|天使|優しい|感動|泣け|祈|尊い|好き"
+        r"|天使|感动|暖心|好人|祝福|哭了|善良"
+        r"|천사|감동|따뜻|기도")
 # 红线：只在真踩线时提示，**不自动否决**
 REDLINE = {
     "政治人物/选举": r"\btrump\b|\bbiden\b|election|president|🇺🇸|racis|democrat|republican",

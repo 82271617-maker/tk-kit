@@ -39,6 +39,25 @@ cd "$KIT"
 3. **账号来源**：飞书工作表（`lark-cli sheets +csv-get --spreadsheet-token <token> --sheet-id <id> --as user`）。
    只有用户贴的链接时，从 URL 里取 `@handle`，忽略 query 参数。
 
+## 一人一份：owner 与历史去重
+
+每个剪辑师自己运营的号不同，所以**账号表和历史都按人隔离**，互不干扰：
+
+| 东西 | 路径 | 说明 |
+| --- | --- | --- |
+| 账号表 | `out/accounts-<owner>.txt` | 各自维护，别共用 |
+| 推荐历史 | `out/history/<owner>.json` | 跑过的片自动记进去 |
+| 候选清单 | `out/pool-<时间>.md` | 共用目录，文件名带时间 |
+
+- `--owner` 决定读哪份历史；同一条视频**只要进过该 owner 的历史，就不再出现在他的候选里**
+- 只记录 `✅ 通过` 的片子，被淘汰的下次还会重新判（数据会变，可能翻盘）
+- 想重推某条：从 `out/history/<owner>.json` 里删掉那个 id
+
+## 语言
+
+不限语种。判定看的是数据（播放/倍数/时长/点赞率）和画面，不看文案语种；评论抓取与主题识别已覆盖 中/英/日/韩 关键词。
+转写那条另说：`transcribe.py --lang` 需要按素材语种指定（en 英语 / ja 日语 / zh 中文 / ko 韩语），不知道就先用 `--lang auto` 试。
+
 ## 流程
 
 ```text
@@ -111,9 +130,9 @@ KIT="${KIT:-$HOME/tk-kit/kit}"; cd "$KIT"
 KIT="${KIT:-$HOME/tk-kit/kit}"   # 没设也能跑
 cd "$KIT"
 
-# 1) 批量抓取 + 判定（每号 20 条）
-printf "@handle1\n@handle2\n" > out/accounts.txt
-.venv/bin/python pool.py --accounts out/accounts.txt --limit 20
+# 1) 批量抓取 + 判定（每号 20 条），--owner 必填：一人一份账号表 + 一份历史
+printf "@handle1\n@handle2\n" > out/accounts-<你的名字>.txt
+.venv/bin/python pool.py --accounts out/accounts-<你的名字>.txt --limit 20 --owner <你的名字> --open
 
 # 2) 交付链接 + 下载素材（把 pool 结果里通过的链接贴进 out/selected.txt）
 .venv/bin/python deliver.py out/selected.txt
