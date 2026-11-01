@@ -39,6 +39,25 @@ def main():
         print("✗ 缩减不足 30%"); ok = False
     else:
         print("✓ 缩减达标")
+    # 发布文案（可选，存在就校验）
+    cap = d/"发布文案.txt"
+    if cap.exists():
+        cl = [x for x in cap.read_text(encoding="utf-8").splitlines() if x.strip()]
+        if len(cl) < 3:
+            print("✗ 发布文案不足 3 行（标题/正文/标签）"); ok = False
+        else:
+            tags = re.findall(r"#[^\s#]+", cl[2])
+            need = {"#速報", "#news"}
+            miss_tag = need - set(tags)
+            print(f"标题 {len(cl[0])} 字 | 正文 {len(cl[1])} 字 | 标签 {len(tags)} 个")
+            if len(tags) > 5:
+                print(f"✗ 标签超过 5 个: {tags}"); ok = False
+            elif miss_tag:
+                print(f"✗ 缺必需标签: {miss_tag}"); ok = False
+            else:
+                print("✓ 标签 ≤5 且含 #速報 #news")
+    else:
+        print("· 发布文案.txt 未生成（可选）")
     print("结论:", "全部通过" if ok else "不合格")
     return 0 if ok else 1
 
