@@ -58,6 +58,12 @@ def main():
                 print("✓ 标签 ≤5 且含 #速報 #news")
     else:
         print("· 发布文案.txt 未生成（可选）")
+    # 评论取料（改写前置）
+    cm = d/"00-评论.md"
+    if cm.exists():
+        print("✓ 00-评论.md 存在（钩子可溯源）")
+    else:
+        print("✗ 缺 00-评论.md —— 改写前必须扒评论，否则钩子是凭感觉编的"); ok = False
     print("结论:", "全部通过" if ok else "不合格")
     return 0 if ok else 1
 
