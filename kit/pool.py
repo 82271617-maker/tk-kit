@@ -11,6 +11,7 @@ import argparse
 import datetime as dt
 import json
 import statistics as st
+import re
 import subprocess
 import sys
 import time
@@ -18,6 +19,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import pick  # noqa: E402  复用阈值与判定逻辑
+
+KANA = re.compile(r"[\u3041-\u309f\u30a1-\u30fa]")   # 平假名/片假名 → 视为日语源
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "out"
@@ -89,6 +92,25 @@ def list_videos(handle, limit, attempts=3):
     return seed
 
 
+def open_urls(urls):
+    """macOS：用 Safari 新建标签页打开。open(1) 对已存在域名会复用，不建 tab，实测无效。"""
+    urls = [u for u in urls if u]
+    if not urls:
+        return 0
+    import subprocess, tempfile
+    f = Path(tempfile.mkdtemp()) / "urls.txt"
+    f.write_text("\n".join(urls), encoding="utf-8")
+    script = f'''tell application "Safari"
+activate
+set u to paragraphs of (read (POSIX file "{f}") as «class utf8»)
+repeat with x in u
+  if x is not "" then make new tab at end of tabs of window 1 with properties {{URL:(x as text)}}
+end repeat
+end tell'''
+    subprocess.run(["osascript", "-e", script], check=False)
+    return len(urls)
+
+
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--accounts", required=True)
@@ -96,6 +118,10 @@ def main():
     p.add_argument("--owner", default="default", help="剪辑师名，历史按人隔离（一人一份账号表+一份历史）")
     p.add_argument("--open", action="store_true", help="跑完自动在浏览器打开通过的视频")
     p.add_argument("--open-max", type=int, default=5, help="最多自动打开几条")
+    p.add_argument("--include-ja", action="store_true",
+                   help="默认排除日语源（已是日语，不能当二创素材）；加这个才包含")
+    p.add_argument("--mark-done", default="", help="把逗号分隔的视频 id 直接记进历史（补录已做过的片）")
+    p.add_argument("--backfill", default="", help="从某个素材目录反推已做过的片，补进历史")
     a = p.parse_args()
 
     handles = [h for h in (handle_of(x) for x in Path(a.accounts).read_text().splitlines()) if h]
@@ -106,6 +132,19 @@ def main():
     hist_path = hist_dir / f"{a.owner}.json"
     history = json.loads(hist_path.read_text()) if hist_path.exists() else {}
     skipped_dup = 0
+    meta_fail = 0
+
+    # 补录：手工指定过的 id
+    for vid in [x.strip() for x in a.mark_done.split(",") if x.strip()]:
+        history.setdefault(vid, {"handle": "", "title": "(手工补录)", "url": "", "first_seen": "manual"})
+    # 补录：从素材目录反推（01-素材/<id>.mp4 这类）
+    if a.backfill:
+        bf = Path(a.backfill).expanduser()
+        for f in bf.glob("*.mp4"):
+            history.setdefault(f.stem, {"handle": "", "title": "(目录补录)", "url": "", "first_seen": "backfill"})
+    if a.mark_done or a.backfill:
+        hist_path.write_text(json.dumps(history, ensure_ascii=False, indent=1))
+        print(f"历史补录后共 {len(history)} 条")
 
     for h in handles:
         items = list_videos(h, a.limit)
@@ -127,8 +166,12 @@ def main():
             try:
                 meta = pick.ytdlp_json(url)
             except SystemExit:
+                meta_fail += 1
                 continue
             hard, lr, cr, age, views_ = pick.judge(meta, bases[h], True)
+            ja_src = bool(KANA.search(meta.get("title") or "") or KANA.search(meta.get("description") or ""))
+            if ja_src and not a.include_ja:
+                hard = hard + [("源语言=日语（仅参考）", False, "")]
             rows.append(dict(handle=h, title=(meta.get("title") or "")[:60], url=url,
                              views=views_,
                              mult=views_ / bases[h]["median"] if bases[h]["median"] else 0,
@@ -141,7 +184,7 @@ def main():
     lines = [f"# 候选清单 · {now:%Y-%m-%d %H:%M}", "",
              f"账号：{', '.join('@' + h for h in handles)}　池子：{len(rows)} 条　"
              f"通过：{sum(r['passed'] for r in rows)} 条　"
-             f"历史去重跳过：{skipped_dup} 条（owner: {a.owner}）", ""]
+             f"历史去重跳过：{skipped_dup} 条　元数据取不到：{meta_fail} 条（owner: {a.owner}）", ""]
     for h, b in bases.items():
         lines.append(f"- @{h} 基线：中位数 {b['median']:,}（{b['n']} 条，{b.get('source','')}）")
     lines.append("")
@@ -173,11 +216,11 @@ def main():
 
     # 自动打开（不用人再去复制链接）
     if a.open:
-        import subprocess
-        picked = [r for r in rows if r["passed"]][: a.open_max]
-        for r in picked:
-            subprocess.run(["open", r["url"]], check=False)
-        print(f"opened: {len(picked)} 条")
+        picked = [r["url"] for r in rows if r["passed"]][: a.open_max]
+        n = open_urls(picked)
+        for i, u in enumerate(picked, 1):
+            print(f"  open[{i}] {u}")
+        print(f"opened: {n} 条（Safari 新标签页）")
 
 
 if __name__ == "__main__":
