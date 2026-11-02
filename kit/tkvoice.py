@@ -95,7 +95,7 @@ def main():
     print(f"  句数      {len(lines_pre)} 句 · {chars} 字符")
     print(f"  调用      {calls} 次合成")
     print(f"  音色      {a.voice_id}")
-    print(f"  预估费用  约 ¥{chars/1000*0.3:.2f}（按 ¥0.3/千字符粗估，仅供参考）")
+    print(f"  计费单位  {chars} 字符（按字符计费；单价与扣费以下单后台账单为准，不在此估算）")
     if a.dry_run or not a.yes:
         print("\n未执行：需要用户同意后加 --yes 才真正调用接口。")
         return
