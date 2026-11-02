@@ -81,10 +81,24 @@ def main():
     p.add_argument("--speed", type=float, default=1.0)
     p.add_argument("--gap", type=float, default=0.25, help="去气口版句间停顿")
     p.add_argument("--raw-gap", type=float, default=0.35, help="原配音版句间停顿")
+    p.add_argument("--dry-run", action="store_true", help="只打印计划与预估调用数，不调接口")
+    p.add_argument("--yes", action="store_true", help="确认花钱：没有它不会调用任何付费接口")
     p.add_argument("--mode", choices=["fast", "precise"], default="fast",
                    help="fast=整段合成自然（默认）；precise=逐句合成字幕零误差")
     a = p.parse_args()
 
+    lines_pre = [l.strip() for l in pathlib.Path(a.script).read_text(encoding="utf-8").splitlines() if l.strip()]
+    chars = sum(len(l) for l in lines_pre)
+    calls = 1 if a.mode == "fast" else len(lines_pre)
+    print("== 花钱计划 ==")
+    print(f"  模式      {a.mode}")
+    print(f"  句数      {len(lines_pre)} 句 · {chars} 字符")
+    print(f"  调用      {calls} 次合成")
+    print(f"  音色      {a.voice_id}")
+    print(f"  预估费用  约 ¥{chars/1000*0.3:.2f}（按 ¥0.3/千字符粗估，仅供参考）")
+    if a.dry_run or not a.yes:
+        print("\n未执行：需要用户同意后加 --yes 才真正调用接口。")
+        return
     key, ep = env()
     lines = [l.strip() for l in pathlib.Path(a.script).read_text(encoding="utf-8").splitlines() if l.strip()]
     if not lines: sys.exit("稿子为空")
