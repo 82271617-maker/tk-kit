@@ -14,6 +14,8 @@
   <名>-时间表.json    每句起止 + 时长 + voice_id
 """
 import argparse, base64, json, os, pathlib, re, subprocess, sys, tempfile, time
+
+SOT_RE = re.compile(r"^#SOT\s*([\d.]+)s\s*\|\s*(.*)$")
 import urllib.request, urllib.error
 
 FF = os.path.expanduser("~/tk-kit/kit/.venv/lib/python3.9/site-packages/imageio_ffmpeg/binaries/ffmpeg-macos-aarch64-v7.1")
@@ -24,6 +26,48 @@ def env():
     if not key:
         sys.exit("缺 MINIMAX_API_KEY（在 ~/.tk-voice.env 里）")
     return key, ep
+
+LOG = os.environ.get("TK_CALL_LOG", os.path.expanduser("~/.tk-voice-calls.log"))
+
+
+def resolve_voice(voice_id):
+    """去音色库找这个 voice_id 属于哪个站点，返回 (endpoint, key)。
+    音色是绑站点的：国内站克隆的只能用 api.minimaxi.com，海外站只能用 api.minimax.io。"""
+    lib = os.path.expanduser(os.environ.get("TK_VOICE_LIB", "~/Desktop/TK库/02-音克隆库"))
+    ep = os.environ.get("MINIMAX_ENDPOINT", "https://api.minimaxi.com").rstrip("/")
+    for meta in pathlib.Path(lib).glob("*/*/meta.json"):
+        try:
+            d = json.loads(meta.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if d.get("voice_id") == voice_id:
+            ep = (d.get("endpoint") or ep).rstrip("/")
+            break
+    if "minimax.io" in ep:
+        key = os.environ.get("MINIMAX_API_KEY_IO", "")
+        if not key:
+            sys.exit(f"音色 {voice_id} 属海外站 {ep}，但没设 MINIMAX_API_KEY_IO")
+        return ep, key
+    key = os.environ.get("MINIMAX_API_KEY_CN") or os.environ.get("MINIMAX_API_KEY", "")
+    if not key:
+        sys.exit("缺 MINIMAX_API_KEY（国内站）")
+    return ep, key
+
+
+def log_call(kind, voice_id, model, chars, status):
+    """本地台账：每次付费调用记一行，时间/类型/音色/字符数/结果。平台不给账单明细，就自己记。"""
+    import json as _json
+    import datetime as _dt
+    try:
+        with open(LOG, "a", encoding="utf-8") as f:
+            f.write(_json.dumps({
+                "t": _dt.datetime.now().isoformat(timespec="seconds"),
+                "kind": kind, "voice_id": voice_id, "model": model,
+                "chars": chars, "status": status,
+            }, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
 
 def tts(text, voice_id, model, key, ep, speed=1.0, retries=3):
     body = json.dumps({
@@ -41,7 +85,9 @@ def tts(text, voice_id, model, key, ep, speed=1.0, retries=3):
             st = (d.get("base_resp") or {}).get("status_code")
             if st != 0:
                 last = f"{st} {(d.get('base_resp') or {}).get('status_msg')}"
+                log_call("tts", voice_id, model, len(text), last)
             else:
+                log_call("tts", voice_id, model, len(text), "ok")
                 a = d["data"]["audio"]
                 # MiniMax 返回的是十六进制串，不是 base64（实测 494433 = "ID3"）
                 try:
@@ -96,15 +142,21 @@ def main():
     print(f"  调用      {calls} 次合成")
     print(f"  音色      {a.voice_id}")
     print(f"  计费单位  {chars} 字符（按字符计费；单价与扣费以下单后台账单为准，不在此估算）")
+    ep_guess, _ = resolve_voice(a.voice_id) if True else (None, None)
+    print(f"  站点      {ep_guess}")
     if a.dry_run or not a.yes:
         print("\n未执行：需要用户同意后加 --yes 才真正调用接口。")
         return
-    key, ep = env()
+    ep, key = resolve_voice(a.voice_id)
     lines = [l.strip() for l in pathlib.Path(a.script).read_text(encoding="utf-8").splitlines() if l.strip()]
     if not lines: sys.exit("稿子为空")
     out = pathlib.Path(a.out_dir); out.mkdir(parents=True, exist_ok=True)
     name = a.name or pathlib.Path(a.script).stem
     tmp = pathlib.Path(tempfile.mkdtemp())
+
+    sot = [bool(SOT_RE.match(l)) for l in lines]
+    if any(sot) and a.mode == "fast":
+        sys.exit("稿子里有 #SOT 同期声标记，fast 模式无法插入原声空隙，请改用 --mode precise")
 
     if a.mode == "fast":
         # 整段合成：把每行的空格换成「、」，行间用「。」，让模型自己控制呼吸
@@ -122,6 +174,15 @@ def main():
 
     segs, raws = [], []
     for i, text in enumerate(lines, 1):
+        m = SOT_RE.match(text)
+        if m:                                  # 同期声：不合成，原声占位
+            secs = float(m.group(1)); clean = m.group(2)
+            cut = tmp/f"{i:02d}-cut.wav"
+            subprocess.run([FF, "-v", "error", "-f", "lavfi", "-i", "anullsrc=r=32000:cl=mono",
+                            "-t", f"{secs}", "-y", str(cut)], check=True)
+            segs.append(cut); raws.append(cut)
+            print(f"  {i:02d}/{len(lines)}  [同期声 {secs:.2f}s 留白]  {clean[:24]}", flush=True)
+            continue
         raw = tmp/f"{i:02d}-raw.mp3"
         raw.write_bytes(tts(text, a.voice_id, a.model, key, ep, a.speed))
         cut = tmp/f"{i:02d}-cut.wav"
@@ -154,7 +215,8 @@ def main():
     cut_d = [dur(s) for s in segs]
     for i, (text, d) in enumerate(zip(lines, cut_d), 1):
         start, end = cur, cur + d
-        rows.append(f"{i}\n{tstamp(start)} --> {tstamp(end)}\n{text}\n")
+        show = SOT_RE.match(text).group(2) if SOT_RE.match(text) else text
+        rows.append(f"{i}\n{tstamp(start)} --> {tstamp(end)}\n{show}\n")
         tm.append({"i": i, "start": round(start,3), "end": round(end,3), "dur": round(d,3), "text": text})
         cur = end + a.gap
     srt = out/f"{name}-精确.srt"

@@ -6,9 +6,24 @@
 """
 import sys, re, pathlib
 
+SOT_RE = re.compile(r"^#SOT\s*[\d.]+s\s*\|\s*")
 PUNCT = re.compile(r"[，。！？、：；""''（）()…—,.!?;:]")
 
+def is_sot(l):
+    return l.startswith("#SOT ")
+
+
 def lines(p):
+    """去掉 #SOT 同期声标记后再检查：标记不是正文。"""
+    out = []
+    for l in p.read_text(encoding="utf-8").splitlines():
+        if not l.strip():
+            continue
+        out.append(SOT_RE.sub("", l))
+    return out
+
+
+def raw_lines(p):
     return [l for l in p.read_text(encoding="utf-8").splitlines() if l.strip()]
 
 def main():
@@ -32,7 +47,10 @@ def main():
             print(f"✗ {name} 混入标点: {bad[:3]}"); ok = False
         else:
             print(f"✓ {name} 无标点")
-    c2, c3 = sum(map(len, L2)), sum(map(len, L3))
+    # 同期声（#SOT）不配音，两侧都剔除，只比旁白字数
+    R2, R3 = raw_lines(f2), raw_lines(f3)
+    c2 = sum(len(SOT_RE.sub("", l)) for l in R2 if not is_sot(l))
+    c3 = sum(len(SOT_RE.sub("", l)) for l in R3 if not is_sot(l))
     cut = (1 - c3/c2) * 100 if c2 else 0
     print(f"字数  02={c2}  03={c3}  缩减 {cut:.1f}%")
     if cut < 30:
