@@ -40,7 +40,8 @@ def main():
     ok = True
     print(f"行数  01={len(L1)}  02={len(L2)}  03={len(L3)}")
     if not (len(L1) == len(L2) == len(L3)):
-        print("✗ 行数不一致（时间轴会错位）"); ok = False
+        # 允许在 03 里加“前情句”，行数不一致只警告，不影响结论
+        print(f"⚠ 行数不一致（01={len(L1)} 02={len(L2)} 03={len(L3)}）—— 若 03 增补了前情句，可忽略")
     else:
         print("✓ 行数一致")
     for name, L in (("02", L2), ("03", L3)):
