@@ -127,12 +127,38 @@ def main():
     p.add_argument("--speed", type=float, default=1.0)
     p.add_argument("--gap", type=float, default=0.25, help="去气口版句间停顿")
     p.add_argument("--raw-gap", type=float, default=0.35, help="原配音版句间停顿")
+    p.add_argument("--split", action="store_true", help="按 01/02/03 段标分开产出")
     p.add_argument("--dry-run", action="store_true", help="只打印计划与预估调用数，不调接口")
     p.add_argument("--yes", action="store_true", help="确认花钱：没有它不会调用任何付费接口")
     p.add_argument("--mode", choices=["fast", "precise"], default="fast",
                    help="fast=整段合成自然（默认）；precise=逐句合成字幕零误差")
     a = p.parse_args()
 
+    if a.split:
+        import re as _re
+        segs, cur = {}, None
+        for l in [x.strip() for x in pathlib.Path(a.script).read_text(encoding="utf-8").splitlines() if x.strip()]:
+            m = _re.match(r"^(0[1-9])\s*[:：]?\s*(.*)$", l)
+            if m:
+                cur = m.group(1); segs.setdefault(cur, [])
+                if m.group(2): segs[cur].append(m.group(2))
+            elif cur:
+                segs[cur].append(l)
+        if not segs:
+            sys.exit("没找到 01/02/03 段标，去掉 --split")
+        for k, body in segs.items():
+            tmpf = pathlib.Path(tempfile.mkdtemp()) / f"{k}.txt"
+            tmpf.write_text("\n".join(body) + "\n", encoding="utf-8")
+            cmd = [sys.executable, __file__, str(tmpf), "--voice-id", a.voice_id,
+                   "--out-dir", a.out_dir, "--name", f"{a.name}-{k}",
+                   "--model", a.model, "--mode", a.mode, "--speed", str(a.speed),
+                   "--gap", str(a.gap)]
+            if a.yes: cmd.append("--yes")
+            if a.dry_run: cmd.append("--dry-run")
+            print(f"\n===== 段 {k}（{len(body)} 行）=====", flush=True)
+            subprocess.run(cmd, check=False)
+        print("\n分段产出完成")
+        return
     lines_pre = [l.strip() for l in pathlib.Path(a.script).read_text(encoding="utf-8").splitlines() if l.strip()]
     chars = sum(len(l) for l in lines_pre)
     calls = 1 if a.mode == "fast" else len(lines_pre)

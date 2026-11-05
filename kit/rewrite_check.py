@@ -30,7 +30,9 @@ def main():
     if len(sys.argv) < 2:
         print("用法: rewrite_check.py <目录>"); return 2
     d = pathlib.Path(sys.argv[1])
-    f1, f2, f3 = d/"01-英文稿.txt", d/"02-中文稿.txt", d/"03-调整稿.txt"
+    merges = sorted(d.glob("01-英文稿-*行.txt"))
+    f1 = merges[0] if merges else d/"01-英文稿.txt"
+    f2, f3 = d/"02-中文稿.txt", d/"03-调整稿.txt"
     miss = [f.name for f in (f1, f2, f3) if not f.exists()]
     if miss:
         print(f"缺文件: {', '.join(miss)}"); return 1
@@ -75,7 +77,7 @@ def main():
             else:
                 print("✓ 标签 ≤5 且含 #速報 #news")
     else:
-        print("· 发布文案.txt 未生成（可选）")
+        print("✗ 缺 发布文案.txt（标题/正文/标签 三行，标签≤5 且含 #速報 #news）"); ok = False
     # 评论取料（改写前置）
     cm = d/"00-评论.md"
     if cm.exists():
