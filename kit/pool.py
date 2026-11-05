@@ -7,7 +7,7 @@
 
 账号列表抓取不稳（TikTok 反爬），脚本内置 3 次重试；仍失败会明确告诉你哪个号要手动补链接。
 """
-import argparse
+import argparse, re
 import datetime as dt
 import json
 import statistics as st
@@ -90,6 +90,30 @@ def list_videos(handle, limit, attempts=3):
         if full:
             return full
     return seed
+
+
+# ── 题材分类（软分用，不做淘汰）────────────────────────────────────────────
+# 来源：2026-11-05 账号号2 五个号 84 条复盘——8 条破百万全落在这五类
+THEME_RULES = {
+    "弱者被针对": ("3-year-old", "child", "kid", "boy", "girl", "elderly", "disabled", "autistic"),
+    "好人被罚":   ("risk", "save", "help", "sued", "charged", "fine", "punish", "blamed"),
+    "偷拍小人恶": ("caught", "stole", "stolen", "snatch", "employee", "customer", "cctv", "surveillance"),
+    "灾难人物":   ("crash", "killed", "died", "dead", "passed away", "plane", "jet", "fire", "shooting"),
+    "家庭金钱":   ("husband", "wife", "mother", "father", "sister", "brother", "family", "inheritance", "$"),
+}
+
+def theme_of(text):
+    t = (text or "").lower()
+    for name, kws in THEME_RULES.items():
+        if any(k in t for k in kws):
+            return name
+    return ""
+
+
+def title_key(text, n=6):
+    """取标题前 n 个词做归一化 key，用来跨号识别「同题复用」。"""
+    words = re.findall(r"[a-z0-9$]+", (text or "").lower())
+    return " ".join(words[:n])
 
 
 def open_urls(urls):
@@ -179,7 +203,18 @@ def main():
                              passed=all(ok for _, ok, _ in hard),
                              fails=[n for n, ok, _ in hard if not ok]))
 
-    rows.sort(key=lambda r: (r["passed"], r["mult"]), reverse=True)
+    # 题材软分 +3；同题复用 -1（跨号出现同一故事，说明已被搬运，我们跟进只剩包装优势）
+    seen_keys = {}
+    for r in rows:
+        r["theme"] = theme_of(r["title"])
+        k = title_key(r["title"])
+        seen_keys.setdefault(k, set()).add(r["handle"])
+    for r in rows:
+        k = title_key(r["title"])
+        r["dup"] = len(seen_keys.get(k, set())) >= 2
+        r["soft"] = (3 if r["theme"] else 0) + (-1 if r["dup"] else 0)
+        r["rank"] = r["mult"] + r["soft"]
+    rows.sort(key=lambda r: (r["passed"], r["rank"]), reverse=True)
     now = dt.datetime.now()
     lines = [f"# 候选清单 · {now:%Y-%m-%d %H:%M}", "",
              f"账号：{', '.join('@' + h for h in handles)}　池子：{len(rows)} 条　"
@@ -190,13 +225,14 @@ def main():
     lines.append("")
     if failed:
         lines += [f"> ⚠️ 抓不到主页：{', '.join('@' + h for h in failed)}（需手动贴视频链接）", ""]
-    lines += ["| 结论 | 账号 | 播放 | 倍数 | 天 | 点赞率 | 时长 | 标题 |",
-              "| --- | --- | --- | --- | --- | --- | --- | --- |"]
+    lines += ["| 结论 | 账号 | 播放 | 倍数 | 题材 | 同题 | 天 | 点赞率 | 时长 | 标题 |",
+              "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"]
     for r in rows:
         flag = "✅" if r["passed"] else "❌"
         why = "" if r["passed"] else " " + "/".join(x.split(" ")[0] for x in r["fails"][:2])
         lines.append(
             f"| {flag}{why} | @{r['handle']} | {r['views']:,} | {r['mult']:.1f}× | "
+            f"{r.get('theme','') or '—'} | {'dup' if r.get('dup') else '—'} | "
             f"{r['age']} | {r['lr']:.2f}% | {r['dur']}s | [{r['title']}]({r['url']}) |")
     OUT.mkdir(exist_ok=True)
     out = OUT / f"pool-{now:%Y%m%d-%H%M}.md"
