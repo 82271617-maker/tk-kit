@@ -159,7 +159,8 @@ def main():
     p.add_argument("--out", default=None)
     p.add_argument("--mode", choices=["fill", "blur"], default="fill")
     p.add_argument("--fill", default=FILL)
-    p.add_argument("--rows", default="", help="手工指定 y:height,y:height")
+    p.add_argument("--rows", default="",
+                   help="手工指定 y:height,y:height；带 % 表示按画面高度的百分比（推荐，跨分辨率通用），如 7.3%:21.9%,76.6%:15.1%")
     p.add_argument("--dry-run", action="store_true")
     p.add_argument("--preview", action="store_true", help="画一张带检测框的预览图")
     a = p.parse_args()
@@ -170,8 +171,14 @@ def main():
     if a.rows:
         bands = []
         for seg in a.rows.split(","):
-            y, hh = seg.split(":")
-            bands.append((int(y), int(hh)))
+            ys, hs = seg.split(":")
+            if ys.strip().endswith("%") or hs.strip().endswith("%"):
+                # 百分比写法：跨分辨率通用（720p / 1080p 用同一套参数）
+                y = round(float(ys.strip().rstrip("%")) / 100 * h)
+                hh = round(float(hs.strip().rstrip("%")) / 100 * h)
+            else:
+                y, hh = int(ys), int(hs)
+            bands.append((max(0, y), min(hh, h - y)))
         pic = None
     else:
         frames = sample_frames(src)
