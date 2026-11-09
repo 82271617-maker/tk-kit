@@ -80,6 +80,28 @@ def pick_threshold(audio, n_lines):
     return best[1], best[2]
 
 
+def segments_chars(lines, total, sil=None):
+    """按字数比例切分；若附近有停顿点（±0.25s）就吸附过去，避免切在词中间。"""
+    weights = [max(1, len(l.replace(" ", ""))) for l in lines]
+    acc, bounds = 0, []
+    for w in weights[:-1]:
+        acc += w
+        bounds.append(total * acc / sum(weights))
+    if sil:
+        snapped = []
+        for b in bounds:
+            near = min(sil, key=lambda x: abs(x - b)) if sil else None
+            snapped.append(near if near is not None and abs(near - b) <= 0.25 else b)
+        snapped = sorted(snapped)
+        if len(set(round(x, 2) for x in snapped)) == len(snapped):
+            bounds = snapped
+    segs, prev = [], 0.0
+    for b in bounds:
+        segs.append((prev, b)); prev = b
+    segs.append((prev, total))
+    return segs
+
+
 def segments_from(starts, total):
     segs, prev = [], 0.0
     for s in starts:
@@ -106,6 +128,12 @@ def main():
     p = argparse.ArgumentParser()
     p.add_argument("audio")
     p.add_argument("script")
+    p.add_argument("--align", choices=["silence","chars"], default="silence",
+                   help="silence=按停顿切（默认）；chars=按字数比例切（适合连读、停顿少的配音）")
+    p.add_argument("--bounds", default="",
+                   help="手工指定分句边界（秒，逗号分隔）。给了就跳过停顿检测，直接按它切")
+    p.add_argument("--silence-d", type=float, default=0.0,
+                   help="手工指定停顿阈值（秒）。默认自动搜索；自动搜不到精确匹配时用它")
     p.add_argument("--gap", type=float, default=0.25)
     p.add_argument("--out-dir", default=None)
     p.add_argument("--dry-run", action="store_true")
@@ -135,7 +163,13 @@ def main():
             print(f"wrote {out}")
             return
 
-    d, starts = pick_threshold(audio, len(lines))
+    if a.bounds:
+        starts = [float(x) for x in a.bounds.split(",") if x.strip()]
+        d = 0.0
+        if len(starts) != len(lines) - 1:
+            raise SystemExit(f"--bounds 数量 {len(starts)} 与行数-1 {len(lines)-1} 不符")
+    else:
+        d, starts = (a.silence_d, silences(audio, a.silence_d)) if a.silence_d > 0 else pick_threshold(audio, len(lines))
     exact = len(starts) == len(lines) - 1
     print(f"音频 {total:.2f}s · 文稿 {len(lines)} 行 · 停顿阈值 d={d}s · 检出停顿 {len(starts)} 个"
           f"{'（精确匹配）' if exact else '（不精确，按顺序截断/补齐）'}")
@@ -143,7 +177,11 @@ def main():
     if a.dry_run:
         return
 
-    segs = segments_from(starts, total)
+    if a.align == "chars":
+        segs = segments_chars(lines, total, starts)
+        print("对齐方式：按字数比例（连读配音）")
+    else:
+        segs = segments_from(starts, total)
     # 丢掉碎段（<0.12s，多为尾部静音造成），否则最后一句时长可能为 0
     segs = [x for x in segs if x[1] - x[0] > 0.12] or segs
     if segs:
