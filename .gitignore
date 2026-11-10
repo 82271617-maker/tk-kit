@@ -8,3 +8,4 @@ kit/.venv-asr
 kit/.cache/
 kit/materials/
 kit/voices/
+kit/.venv-demucs

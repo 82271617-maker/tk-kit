@@ -53,6 +53,44 @@ def probe(path):
     return info
 
 
+def repair_audio(path, vid):
+    """下载流常常没有音轨（平台把音视频分开）。缺音频时从 tikwm 取带声音版本，
+    只把音频轨合进原视频（视频流不重编码，保持原分辨率）。"""
+    import urllib.request
+    api = f"https://tikwm.com/api/?url=https://www.tiktok.com/@_/video/{vid}"
+    try:
+        opener = urllib.request.build_opener(urllib.request.ProxyHandler(
+            {"http": PROXY, "https": PROXY}))
+        req = urllib.request.Request(api, headers={"User-Agent": (
+            "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36")})
+        with opener.open(req, timeout=30) as r:
+            data = json.load(r).get("data") or {}
+    except Exception as e:
+        print(f"    ⚠️ 音频修复失败（接口）: {e}")
+        return False
+    play = data.get("play")
+    if not play:
+        print("    ⚠️ 音频修复失败（无 play 地址）")
+        return False
+    tmp = path.with_suffix(".audio-src.mp4")
+    try:
+        subprocess.run(["curl", "-sL", "-m", "300", "-x", PROXY, "-o", str(tmp), play], check=True)
+        merged = path.with_suffix(".merged.mp4")
+        subprocess.run([FF, "-v", "error", "-i", str(path), "-i", str(tmp),
+                        "-map", "0:v:0", "-map", "1:a:0", "-c:v", "copy",
+                        "-c:a", "aac", "-b:a", "128k", "-shortest", "-y", str(merged)], check=True)
+        merged.replace(path)
+        print("    ✓ 已补回音轨（画面未重编码）")
+        return True
+    except Exception as e:
+        print(f"    ⚠️ 音频修复失败（合并）: {e}")
+        return False
+    finally:
+        tmp.unlink(missing_ok=True)
+        path.with_suffix(".merged.mp4").unlink(missing_ok=True)
+
+
 def target_ok(tok):
     try:
         w, h = tok.split("x")
@@ -116,6 +154,10 @@ def main():
         ok += (not existed)
 
         info = probe(path)
+        if not info["audio"]:
+            print("    ⚠️ 无音轨，尝试补回…")
+            if repair_audio(path, vid):
+                info = probe(path)
         rec = {
             "id": vid,
             "account": meta.get("uploader"),
